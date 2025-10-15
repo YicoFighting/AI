@@ -1,10 +1,10 @@
 <template>
   <McLayout class="container">
     <!-- 对话左上角 -->
-    <McHeader :title="'AI'" :logoImg="'https://matechat.gitcode.com/logo.svg'">
-    </McHeader>
+    <!-- <McHeader :title="'AI'" :logoImg="'https://matechat.gitcode.com/logo.svg'">
+    </McHeader> -->
     <!-- 未输入时 -->
-    <McLayoutContent
+    <!-- <McLayoutContent
       v-if="startPage"
       class="flex flex-col items-center justify-center gap-[12px]"
     >
@@ -13,9 +13,10 @@
         :title="'AI'"
         :subTitle="'欢迎使用'"
       ></McIntroduction>
-    </McLayoutContent>
+    </McLayoutContent> -->
     <!-- 对话 -->
-    <McLayoutContent class="content-container" v-else>
+    <!-- <McLayoutContent ref="contentContainerRef" class="content-container" v-else> -->
+    <McLayoutContent ref="contentContainerRef" class="content-container">
       <template v-for="(msg, idx) in messages" :key="idx">
         <McBubble
           v-if="msg.from === 'user'"
@@ -66,7 +67,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { Button } from "vue-devui/button";
 import "vue-devui/button/style.css";
 
@@ -75,9 +76,25 @@ const inputValue = ref("");
 
 const messages = ref<any[]>([]);
 
-const newConversation = () => {
-  startPage.value = true;
-  messages.value = [];
+// 自动滚动相关
+const contentContainerRef = ref<any>(null);
+const autoScroll = ref(true);
+
+const getContainerEl = (): HTMLElement | null => {
+  const comp = contentContainerRef.value as any;
+  if (!comp) return null;
+  return comp.$el ? (comp.$el as HTMLElement) : (comp as HTMLElement);
+};
+
+const scrollToBottom = async () => {
+  const el = getContainerEl();
+  if (!el) return;
+  await nextTick();
+  el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+};
+
+const onWheel = () => {
+  autoScroll.value = false;
 };
 
 const fetchData = async (ques) => {
@@ -88,6 +105,7 @@ const fetchData = async (ques) => {
     id: "",
     loading: true,
   });
+  if (autoScroll.value) scrollToBottom();
 
   const resp = await fetch("http://localhost:3000/chat", {
     method: "POST",
@@ -135,26 +153,15 @@ const fetchData = async (ques) => {
       // message.value += payload;
       // const raw = md.render(message.value);
       // html.value = DOMPurify.sanitize(raw);
+      if (autoScroll.value) scrollToBottom();
     }
   }
-
-  // const completion = await client.chat.completions.create({
-  //   model: 'my-model', // 替换为自己的model名称
-  //   messages: [{ role: 'user', content: ques }],
-  //   stream: true, // 为 true 则开启接口的流式返回
-  // });
-  // for await (const chunk of completion) {
-  //   messages.value[messages.value.length - 1].loading = false;
-  //   const content = chunk.choices[0]?.delta?.content || '';
-  //   const chatId = chunk.id;
-  //   messages.value[messages.value.length - 1].content += content;
-  //   messages.value[messages.value.length - 1].id = chatId;
-  // }
 };
 
 const onSubmit = (evt) => {
   inputValue.value = "";
   startPage.value = false;
+  autoScroll.value = true; // 再次提问时重新开启自动滚动
   // 用户发送消息
   messages.value.push({
     from: "user",
@@ -164,6 +171,14 @@ const onSubmit = (evt) => {
 
   fetchData(evt);
 };
+
+onMounted(() => {
+  document.addEventListener("wheel", onWheel);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener("wheel", onWheel);
+});
 </script>
 
 <style lang="scss" scoped>
