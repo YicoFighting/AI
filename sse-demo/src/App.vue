@@ -1,65 +1,94 @@
-<!-- 或者使用华为的开源组件：https://matechat.gitcode.com/ -->
 <template>
-  <div class="home">
-    <el-button class="btn" type="primary" @click="handleClick">
-      Click me
-    </el-button>
-    <div class="message" v-html="html"></div>
-  </div>
+  <McLayout class="container">
+    <!-- 对话左上角 -->
+    <McHeader :title="'AI'" :logoImg="'https://matechat.gitcode.com/logo.svg'">
+    </McHeader>
+    <!-- 未输入时 -->
+    <McLayoutContent
+      v-if="startPage"
+      class="flex flex-col items-center justify-center gap-[12px]"
+    >
+      <McIntroduction
+        :logoImg="'https://matechat.gitcode.com/logo2x.svg'"
+        :title="'AI'"
+        :subTitle="'欢迎使用'"
+      ></McIntroduction>
+    </McLayoutContent>
+    <!-- 对话 -->
+    <McLayoutContent class="content-container" v-else>
+      <template v-for="(msg, idx) in messages" :key="idx">
+        <McBubble
+          v-if="msg.from === 'user'"
+          :content="msg.content"
+          :align="'right'"
+          :avatarConfig="{
+            imgSrc: 'https://matechat.gitcode.com/png/demo/userAvatar.svg',
+          }"
+        >
+        </McBubble>
+        <McBubble
+          v-else
+          :avatarConfig="{ imgSrc: 'https://matechat.gitcode.com/logo.svg' }"
+          :loading="msg.loading"
+        >
+          <McMarkdownCard :content="msg.content"></McMarkdownCard>
+        </McBubble>
+      </template>
+    </McLayoutContent>
+    <McLayoutSender>
+      <McInput
+        :value="inputValue"
+        :maxLength="2000"
+        @change="(e) => (inputValue = e)"
+        @submit="onSubmit"
+      >
+        <template #extra>
+          <div class="input-foot-wrapper">
+            <div class="input-foot-left">
+              <span class="input-foot-maxlength">
+                {{ inputValue.length }}/2000
+              </span>
+            </div>
+            <div class="input-foot-right">
+              <Button
+                shape="round"
+                :disabled="!inputValue"
+                @click="inputValue = ''"
+              >
+                <span class="demo-button-content">清空输入</span>
+              </Button>
+            </div>
+          </div>
+        </template>
+      </McInput>
+    </McLayoutSender>
+  </McLayout>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref } from "vue";
-import hljs from "highlight.js";
-import "highlight.js/styles/github.css";
-import DOMPurify from "dompurify";
-import MarkdownIt from "markdown-it";
-import { full as emoji } from "markdown-it-emoji";
+import { Button } from "vue-devui/button";
+import "vue-devui/button/style.css";
 
-const message = ref("");
-const html = ref("");
+const startPage = ref(true);
+const inputValue = ref("");
 
-// https://markdown-it.github.io/
-const md = new MarkdownIt({
-  html: true,
-  xhtmlOut: false,
-  breaks: false,
-  langPrefix: "language-",
-  linkify: true,
-  typographer: false,
-  // quotes: "\"\"''",
-  highlight: function (code, lang) {
-    // console.log("🎯 代码块被识别:", {
-    //   lang,
-    //   hasLanguage: lang && hljs.getLanguage(lang),
-    //   codePreview: code.substring(0, 50) + (code.length > 50 ? "..." : ""),
-    // });
-    let className = "hljs";
-    try {
-      if (lang && hljs.getLanguage(lang)) {
-        const out = hljs.highlight(code, {
-          language: lang,
-          ignoreIllegals: true,
-        }).value;
-        className += ` language-${lang}`;
-        return `<pre><code class="${className}">${out}</code></pre>`;
-      }
-      const auto = hljs.highlightAuto(code);
-      if (auto.language) className += ` language-${auto.language}`;
-      return `<pre><code class="${className}">${auto.value}</code></pre>`;
-    } catch {
-      const escaped = code
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-      return `<pre><code class="${className}">${escaped}</code></pre>`;
-    }
-  },
-});
-// emoji 扩展
-md.use(emoji);
+const messages = ref<any[]>([]);
 
-const handleClick = async () => {
+const newConversation = () => {
+  startPage.value = true;
+  messages.value = [];
+};
+
+const fetchData = async (ques) => {
+  messages.value.push({
+    from: "model",
+    content: "",
+    avatarConfig: { name: "model" },
+    id: "",
+    loading: true,
+  });
+
   const resp = await fetch("http://localhost:3000/chat", {
     method: "POST",
     headers: {
@@ -67,16 +96,21 @@ const handleClick = async () => {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      message: "你可以给我写个冒泡排序吗？使用 JavaScript",
+      message: ques,
     }),
   });
 
-  const reader = resp.body.getReader();
+  const reader = resp?.body?.getReader() || null;
   const decoder = new TextDecoder();
+
+  const chatId = Date.now();
   while (true) {
-    const { done, value } = await reader.read();
+    const { done, value } = (await reader?.read()) || {
+      done: false,
+      value: null,
+    };
     if (done) break;
-    const text = decoder.decode(value, { stream: true });
+    const text = decoder.decode(value as Uint8Array, { stream: true });
     for (const line of text.split("\n")) {
       if (!line.startsWith("data: ")) continue;
       let payload = line.slice(6).replace(/\r$/, "");
@@ -95,170 +129,102 @@ const handleClick = async () => {
         .replace(/\\t/g, "\t")
         .replace(/\\"/g, '"')
         .replace(/\\'/g, "'");
-      message.value += payload;
-      const raw = md.render(message.value);
-      html.value = DOMPurify.sanitize(raw);
+      messages.value[messages.value.length - 1].loading = false;
+      messages.value[messages.value.length - 1].content += payload;
+      messages.value[messages.value.length - 1].id = chatId;
+      // message.value += payload;
+      // const raw = md.render(message.value);
+      // html.value = DOMPurify.sanitize(raw);
     }
   }
+
+  // const completion = await client.chat.completions.create({
+  //   model: 'my-model', // 替换为自己的model名称
+  //   messages: [{ role: 'user', content: ques }],
+  //   stream: true, // 为 true 则开启接口的流式返回
+  // });
+  // for await (const chunk of completion) {
+  //   messages.value[messages.value.length - 1].loading = false;
+  //   const content = chunk.choices[0]?.delta?.content || '';
+  //   const chatId = chunk.id;
+  //   messages.value[messages.value.length - 1].content += content;
+  //   messages.value[messages.value.length - 1].id = chatId;
+  // }
+};
+
+const onSubmit = (evt) => {
+  inputValue.value = "";
+  startPage.value = false;
+  // 用户发送消息
+  messages.value.push({
+    from: "user",
+    content: evt,
+    avatarConfig: { name: "user" },
+  });
+
+  fetchData(evt);
 };
 </script>
 
-<style scoped>
-.home {
-  box-sizing: border-box;
-  width: 100%;
-  height: 100%;
+<style lang="scss" scoped>
+.container {
+  width: 1000px;
+  margin: 20px auto;
+  height: calc(100vh - 82px);
   padding: 20px;
-  overflow: hidden;
+  gap: 8px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 16px;
+}
 
+.content-container {
   display: flex;
   flex-direction: column;
-}
-.btn {
-  width: 120px;
-  margin-bottom: 10px;
-}
-.message {
-  flex: 1 0 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-  line-height: 1.7;
-}
-
-/* v-html 渲染的子节点需要用深度选择器 */
-.message :deep(pre) {
-  background-color: #f6f8fa; /* GitHub-like */
-  border: 1px solid #eaeef2;
-  border-radius: 8px;
-  padding: 12px 16px;
+  gap: 8px;
   overflow: auto;
-  margin: 12px 0;
-  line-height: 1.6;
-  position: relative;
-}
-/* 
-* ui-monospace：系统通用别名
-* SFMono-Regular：macOS 系统字体
-* Menlo：macOS 系统字体
-* Consolas：Windows 系统字体
-* "Liberation Mono"：Linux 系统字体
-* "Courier New"：Windows 系统字体
-* Monaco：macOS 系统字体
-* monospace：通用字体族
-*/
-.message :deep(pre code) {
-  display: block;
-  font-size: 13px;
-  tab-size: 2;
 }
 
-/* 让行内代码更清晰 */
-.message :deep(p > code),
-.message :deep(li > code) {
-  background-color: #f6f8fa;
-  border: 1px solid #eaeef2;
-  border-radius: 4px;
-  padding: 0 4px;
-  margin: 0 2px;
-}
-
-/* 标题间距微调 */
-.message :deep(h1),
-.message :deep(h2),
-.message :deep(h3),
-.message :deep(h4),
-.message :deep(h5),
-.message :deep(h6) {
-  margin: 16px 0 8px;
-}
-
-/* 段落与文字 */
-.message :deep(p) {
-  margin: 0.8em 0;
-  color: #24292f;
-}
-
-/* 链接样式 */
-.message :deep(a) {
-  color: #0969da;
-  text-decoration: none;
-  border-bottom: 1px solid rgba(9, 105, 218, 0.25);
-}
-.message :deep(a:hover) {
-  text-decoration: underline;
-  border-bottom-color: transparent;
-}
-
-/* 引用块 */
-.message :deep(blockquote) {
-  margin: 12px 0;
-  padding: 8px 12px;
-  border-left: 4px solid #d0d7de;
-  background-color: #f6f8fa;
-  color: #57606a;
-}
-
-/* 列表 */
-.message :deep(ul),
-.message :deep(ol) {
-  margin: 8px 0;
-  padding-left: 1.5em;
-}
-.message :deep(li) {
-  margin: 6px 0;
-}
-
-/* 分割线 */
-.message :deep(hr) {
-  border: 0;
-  border-top: 1px solid #d0d7de;
-  margin: 24px 0;
-}
-
-/* 表格 */
-.message :deep(table) {
+.input-foot-wrapper {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   width: 100%;
-  border-collapse: collapse;
-  margin: 12px 0;
-  display: block;
-  overflow: auto;
-}
-.message :deep(th),
-.message :deep(td) {
-  border: 1px solid #d0d7de;
-  padding: 8px 12px;
-  text-align: left;
-}
-.message :deep(thead th) {
-  background: #f3f4f6;
-}
-.message :deep(tbody tr:nth-child(odd)) {
-  background: #f9fafb;
-}
+  height: 100%;
+  margin-right: 8px;
 
-/* 图片 */
-.message :deep(img) {
-  max-width: 100%;
-  display: block;
-  border-radius: 6px;
-  margin: 8px 0;
-}
+  .input-foot-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
 
-/* 标题尺寸微调（相对当前容器） */
-.message :deep(h1) {
-  font-size: 1.6em;
-}
-.message :deep(h2) {
-  font-size: 1.4em;
-}
-.message :deep(h3) {
-  font-size: 1.25em;
-}
-.message :deep(h4) {
-  font-size: 1.1em;
-}
-.message :deep(h5),
-.message :deep(h6) {
-  font-size: 1em;
+    span {
+      font-size: 14px;
+      line-height: 18px;
+      color: #252b3a;
+      cursor: pointer;
+    }
+
+    .input-foot-dividing-line {
+      width: 1px;
+      height: 14px;
+      background-color: #d7d8da;
+    }
+
+    .input-foot-maxlength {
+      font-size: 14px;
+      color: #71757f;
+    }
+  }
+
+  .input-foot-right {
+    .demo-button-content {
+      font-size: 14px;
+    }
+
+    & > *:not(:first-child) {
+      margin-left: 8px;
+    }
+  }
 }
 </style>
