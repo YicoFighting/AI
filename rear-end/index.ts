@@ -3,6 +3,7 @@ import "dotenv/config";
 import cors from "cors";
 import fs from "fs";
 import path from "path";
+import os from "os";
 import { ProxyAgent, setGlobalDispatcher } from "undici";
 import { GoogleGenAI } from "@google/genai";
 if (process.env.HTTP_PROXY || process.env.HTTPS_PROXY) {
@@ -112,6 +113,17 @@ app.post("/chat", async (req: Request, res: Response) => {
 });
 
 const port = Number(process.env.PORT) || 3000;
-app.listen(port, () => {
+app.listen(port, '0.0.0.0', () => {
   console.log(`SSE listening on http://localhost:${port}`);
+  const networks = os.networkInterfaces();
+  const ipv4List = Object.values(networks).flatMap((ifaces) =>
+    (ifaces ?? [])
+      .filter((iface) => iface.family === "IPv4" && !iface.internal)
+      .map((iface) => iface.address)
+  );
+  if (ipv4List.length > 0) {
+    for (const ip of ipv4List) {
+      console.log(`SSE listening on http://${ip}:${port}`);
+    }
+  }
 });
