@@ -1,26 +1,36 @@
-import express, { Request, Response } from 'express';
-import cors from 'cors';
-import fs from 'fs';
-import path from 'path';
+import express, { Request, Response } from "express";
+import "dotenv/config";
+import cors from "cors";
+import fs from "fs";
+import path from "path";
+import { ProxyAgent, setGlobalDispatcher } from "undici";
+import { GoogleGenAI } from "@google/genai";
+if (process.env.HTTP_PROXY || process.env.HTTPS_PROXY) {
+  setGlobalDispatcher(
+    new ProxyAgent(process.env.HTTPS_PROXY || process.env.HTTP_PROXY!)
+  );
+}
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-app.post('/sse', async (req: Request, res: Response) => {
+const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY });
+
+app.post("/sse", async (req: Request, res: Response) => {
   res.set({
-    'Content-Type': 'text/event-stream; charset=utf-8',
-    'Cache-Control': 'no-cache, no-transform',
-    'Connection': 'keep-alive',
-    'X-Accel-Buffering': 'no',
+    "Content-Type": "text/event-stream; charset=utf-8",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
   });
 
   res.write(`data: [START]\n\n`);
 
   try {
-    const filePath = path.resolve(__dirname, 'example.md');
+    const filePath = path.resolve(__dirname, "example.md");
     await fs.promises.access(filePath, fs.constants.R_OK);
-    const content = await fs.promises.readFile(filePath, 'utf-8');
+    const content = await fs.promises.readFile(filePath, "utf-8");
 
     let index = 0;
     let timer: NodeJS.Timeout | null = null;
@@ -31,8 +41,8 @@ app.post('/sse', async (req: Request, res: Response) => {
           clearInterval(timer);
           timer = null;
         }
-        res.write('event: end\n');
-        res.write('data: [DONE]\n\n');
+        res.write("event: end\n");
+        res.write("data: [DONE]\n\n");
         res.end();
         return;
       }
@@ -49,15 +59,54 @@ app.post('/sse', async (req: Request, res: Response) => {
 
     timer = setInterval(sendChunk, 100);
 
-    req.on('close', () => {
+    req.on("close", () => {
       if (timer) {
         clearInterval(timer);
         timer = null;
       }
     });
   } catch (err) {
-    res.write('event: error\n');
-    res.write(`data: ${JSON.stringify({ message: 'read error', error: String(err) })}\n\n`);
+    res.write("event: error\n");
+    res.write(
+      `data: ${JSON.stringify({
+        message: "read error",
+        error: String(err),
+      })}\n\n`
+    );
+    res.end();
+  }
+});
+
+app.post("/chat", async (req: Request, res: Response) => {
+  res.set({
+    "Content-Type": "text/event-stream; charset=utf-8",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+
+  const promote = " 请用中文回答!";
+  const contents = String(req.body?.message ?? "") + promote;
+  // res.write("data: [START]\n\n");
+
+  try {
+    const response = await ai.models.generateContentStream({
+      model: "gemini-2.5-flash",
+      contents,
+    });
+    for await (const chunk of response) {
+      res.write(`data: ${JSON.stringify(chunk.text)}`);
+    }
+    // res.write("data: [DONE]\n\n");
+    res.end();
+  } catch (err) {
+    res.write("event: error\n");
+    res.write(
+      `data: ${JSON.stringify({
+        message: "chat error",
+        error: String(err),
+      })}\n\n`
+    );
     res.end();
   }
 });
@@ -66,5 +115,3 @@ const port = Number(process.env.PORT) || 3000;
 app.listen(port, () => {
   console.log(`SSE listening on http://localhost:${port}`);
 });
-
-
