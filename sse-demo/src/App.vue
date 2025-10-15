@@ -1,7 +1,7 @@
 <template>
   <McLayout class="container">
     <!-- 对话左上角 -->
-    <!-- <McHeader :title="'AI'" :logoImg="'https://matechat.gitcode.com/logo.svg'">
+    <!-- <McHeader :title="'AI'" :logoImg="AiImage">
     </McHeader> -->
     <!-- 未输入时 -->
     <!-- <McLayoutContent
@@ -9,7 +9,7 @@
       class="flex flex-col items-center justify-center gap-[12px]"
     >
       <McIntroduction
-        :logoImg="'https://matechat.gitcode.com/logo2x.svg'"
+        :logoImg="AiImage"
         :title="'AI'"
         :subTitle="'欢迎使用'"
       ></McIntroduction>
@@ -29,7 +29,7 @@
         </McBubble>
         <McBubble
           v-else
-          :avatarConfig="{ imgSrc: 'https://matechat.gitcode.com/logo.svg' }"
+          :avatarConfig="{ imgSrc: AiImage }"
           :loading="msg.loading"
         >
           <McMarkdownCard :content="msg.content"></McMarkdownCard>
@@ -40,6 +40,7 @@
       <McInput
         :value="inputValue"
         :maxLength="2000"
+        placeholder="请输入您的问题"
         @change="(e) => (inputValue = e)"
         @submit="onSubmit"
       >
@@ -52,6 +53,7 @@
             </div>
             <div class="input-foot-right">
               <Button
+                icon="op-clearup"
                 shape="round"
                 :disabled="!inputValue"
                 @click="inputValue = ''"
@@ -61,6 +63,11 @@
             </div>
           </div>
         </template>
+        <!-- <template #button>
+          <Button shape="round" class="send-button bg-['#5e7ce0'] color-['#ffffff']" :disabled="!inputValue || loading" @click="onSubmit">
+            发送
+          </Button>
+        </template> -->
       </McInput>
     </McLayoutSender>
   </McLayout>
@@ -70,11 +77,21 @@
 import { ref, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { Button } from "vue-devui/button";
 import "vue-devui/button/style.css";
+import AiImage from "./assets/gemini.png";
 
 const startPage = ref(true);
 const inputValue = ref("");
+const loading = ref(false);
 
-const messages = ref<any[]>([]);
+const messages = ref<any[]>([
+  {
+    from: "model",
+    content: "请输入您的问题",
+    avatarConfig: { name: "model" },
+    id: "-1",
+    loading: false,
+  },
+]);
 
 // 自动滚动相关
 const contentContainerRef = ref<any>(null);
@@ -106,6 +123,7 @@ const fetchData = async (ques) => {
     loading: true,
   });
   if (autoScroll.value) scrollToBottom();
+  loading.value = true;
 
   const resp = await fetch("http://localhost:3000/chat", {
     method: "POST",
@@ -127,7 +145,10 @@ const fetchData = async (ques) => {
       done: false,
       value: null,
     };
-    if (done) break;
+    if (done) {
+      loading.value = false;
+      break;
+    }
     const text = decoder.decode(value as Uint8Array, { stream: true });
     for (const line of text.split("\n")) {
       if (!line.startsWith("data: ")) continue;
@@ -161,7 +182,8 @@ const fetchData = async (ques) => {
 const onSubmit = (evt) => {
   inputValue.value = "";
   startPage.value = false;
-  autoScroll.value = true; // 再次提问时重新开启自动滚动
+  // 再次提问时重新开启自动滚动
+  autoScroll.value = true;
   // 用户发送消息
   messages.value.push({
     from: "user",
@@ -183,21 +205,26 @@ onBeforeUnmount(() => {
 
 <style lang="scss" scoped>
 .container {
-  width: 1000px;
-  margin: 20px auto;
-  height: calc(100vh - 82px);
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
   padding: 20px;
   gap: 8px;
-  background: #fff;
-  border: 1px solid #ddd;
-  border-radius: 16px;
 }
 
 .content-container {
+  box-sizing: border-box;
+  width: 100%;
   display: flex;
   flex-direction: column;
   gap: 8px;
   overflow: auto;
+  :deep(.mc-bubble) {
+    width: 100%;
+    .mc-bubble-content-container {
+      max-width: calc(100% - 40px);
+    }
+  }
 }
 
 .input-foot-wrapper {
@@ -239,6 +266,29 @@ onBeforeUnmount(() => {
 
     & > *:not(:first-child) {
       margin-left: 8px;
+    }
+  }
+}
+
+.send-button {
+  background-color: #5e7ce0;
+  color: #ffffff;
+  &:disabled {
+    background-color: #beccfa;
+    cursor: not-allowed;
+  }
+}
+
+:deep(.mc-bubble-avatar) {
+  height: 48px;
+  .mc-bubble-avatar-wrapper {
+    height: 48px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    img {
+      width: 30px !important;
+      height: 30px !important;
     }
   }
 }

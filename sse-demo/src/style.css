@@ -105,3 +105,8 @@ body {
 hr {
   display: none !important;
 }
+
+/* 隐藏全局滚动条 */
+::-webkit-scrollbar {
+  display: none !important;
+}
