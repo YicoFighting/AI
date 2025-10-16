@@ -171,9 +171,6 @@ const fetchData = async (ques) => {
       messages.value[messages.value.length - 1].loading = false;
       messages.value[messages.value.length - 1].content += payload;
       messages.value[messages.value.length - 1].id = chatId;
-      // message.value += payload;
-      // const raw = md.render(message.value);
-      // html.value = DOMPurify.sanitize(raw);
       if (autoScroll.value) scrollToBottom();
     }
   }

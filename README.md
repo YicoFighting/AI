@@ -1,3 +1,14 @@
+# 一键构建与打包（Windows）
+
+在根目录执行 `diy.cmd`，它将：
+
+1. 构建前端 `sse-demo`，输出到 `sse-demo/dist`
+2. 覆盖拷贝到 `pkg/public`
+3. 编译后端 TypeScript 到 `rear-end/dist`
+4. 使用 `pkg` 打包后端代码 `rear-end/dist` ，生成 Windows x64 可执行文件到 `pkg`
+5. 打包完成后，将 `.env`（包含 `GOOGLE_API_KEY`、可选 `PORT`）与 `example.md` 拷贝到 `pkg`
+6. 生成 `run-exe-console.cmd` 和 `run-exe.cmd` 执行 `index.exe` 程序
+
 # AI
 
 AI 流式回答

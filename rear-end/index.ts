@@ -1,11 +1,11 @@
 import express, { Request, Response } from "express";
-import "dotenv/config";
+import dotenv from "dotenv";
 import cors from "cors";
 import fs from "fs";
 import path from "path";
 import os from "os";
 import { ProxyAgent, setGlobalDispatcher } from "undici";
-import { GoogleGenAI } from "@google/genai";
+import { exec } from "child_process";
 if (process.env.HTTP_PROXY || process.env.HTTPS_PROXY) {
   setGlobalDispatcher(
     new ProxyAgent(process.env.HTTPS_PROXY || process.env.HTTP_PROXY!)
@@ -16,7 +16,25 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_API_KEY });
+// Resolve base directory for both dev and pkg runtime
+const baseDir = (process as any).pkg ? path.dirname(process.execPath) : __dirname;
+
+// Load env from baseDir so exe reads .env next to itself
+dotenv.config({ path: path.join(baseDir, ".env") });
+
+// Static hosting of frontend build outputs
+const publicDir = path.join(baseDir, "public");
+app.use(express.static(publicDir));
+
+// Simple file logger to capture errors when double-clicking exe
+const logFile = path.join(baseDir, "server.log");
+const log = (message: string) => {
+  const line = `${new Date().toISOString()} ${message}`;
+  console.log(line);
+  try {
+    fs.appendFileSync(logFile, line + "\n");
+  } catch {}
+};
 
 app.post("/sse", async (req: Request, res: Response) => {
   res.set({
@@ -29,7 +47,7 @@ app.post("/sse", async (req: Request, res: Response) => {
   res.write(`data: [START]\n\n`);
 
   try {
-    const filePath = path.resolve(__dirname, "example.md");
+    const filePath = path.resolve(baseDir, "example.md");
     await fs.promises.access(filePath, fs.constants.R_OK);
     const content = await fs.promises.readFile(filePath, "utf-8");
 
@@ -91,6 +109,17 @@ app.post("/chat", async (req: Request, res: Response) => {
   // res.write("data: [START]\n\n");
 
   try {
+    const apiKey = process.env.GOOGLE_API_KEY;
+    if (!apiKey) {
+      res.write("event: error\n");
+      res.write(
+        `data: ${JSON.stringify({ message: "missing GOOGLE_API_KEY" })}\n\n`
+      );
+      return res.end();
+    }
+    // Lazy import to avoid ESM require issues under pkg
+    const { GoogleGenAI } = await import("@google/genai");
+    const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContentStream({
       model: "gemini-2.5-flash",
       contents,
@@ -112,9 +141,22 @@ app.post("/chat", async (req: Request, res: Response) => {
   }
 });
 
+// SPA fallback for frontend routing (only for GET requests and non-API paths)
+app.get("*", (req, res, next) => {
+  if (req.method !== "GET") return next();
+  if (req.path.startsWith("/sse") || req.path.startsWith("/chat") || req.path.startsWith("/api")) {
+    return next();
+  }
+  const indexHtml = path.join(publicDir, "index.html");
+  if (fs.existsSync(indexHtml)) {
+    return res.sendFile(indexHtml);
+  }
+  next();
+});
+
 const port = Number(process.env.PORT) || 3000;
 app.listen(port, '0.0.0.0', () => {
-  console.log(`SSE listening on http://localhost:${port}`);
+  log(`SSE listening on http://localhost:${port}`);
   const networks = os.networkInterfaces();
   const ipv4List = Object.values(networks).flatMap((ifaces) =>
     (ifaces ?? [])
@@ -123,7 +165,17 @@ app.listen(port, '0.0.0.0', () => {
   );
   if (ipv4List.length > 0) {
     for (const ip of ipv4List) {
-      console.log(`SSE listening on http://${ip}:${port}`);
+      log(`SSE listening on http://${ip}:${port}`);
     }
   }
+  if (process.platform === "win32") {
+    exec(`start "" "http://localhost:${port}"`);
+  }
+});
+
+process.on("unhandledRejection", (err) => {
+  log("UnhandledRejection: " + String(err));
+});
+process.on("uncaughtException", (err) => {
+  log("UncaughtException: " + String(err));
 });
