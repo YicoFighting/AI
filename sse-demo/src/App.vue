@@ -23,7 +23,7 @@
           :content="msg.content"
           :align="'right'"
           :avatarConfig="{
-            imgSrc: 'https://matechat.gitcode.com/png/demo/userAvatar.svg',
+            imgSrc: UserImage,
           }"
         >
         </McBubble>
@@ -78,6 +78,7 @@ import { ref, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { Button } from "vue-devui/button";
 import "vue-devui/button/style.css";
 import AiImage from "./assets/gemini.png";
+import UserImage from "./assets/deepseek.png";
 
 const startPage = ref(true);
 const inputValue = ref("");
