@@ -6,6 +6,7 @@ import path from "path";
 import os from "os";
 import { ProxyAgent, setGlobalDispatcher } from "undici";
 import { exec } from "child_process";
+import axios from "axios";
 if (process.env.HTTP_PROXY || process.env.HTTPS_PROXY) {
   setGlobalDispatcher(
     new ProxyAgent(process.env.HTTPS_PROXY || process.env.HTTP_PROXY!)
@@ -17,7 +18,9 @@ app.use(cors());
 app.use(express.json());
 
 // Resolve base directory for both dev and pkg runtime
-const baseDir = (process as any).pkg ? path.dirname(process.execPath) : __dirname;
+const baseDir = (process as any).pkg
+  ? path.dirname(process.execPath)
+  : __dirname;
 
 // Load env from baseDir so exe reads .env next to itself
 dotenv.config({ path: path.join(baseDir, ".env") });
@@ -141,10 +144,58 @@ app.post("/chat", async (req: Request, res: Response) => {
   }
 });
 
+app.get("/translate", async (req: Request, res: Response) => {
+  try {
+    const text = String(req.query.text ?? "").trim();
+    const target = String(req.query.target ?? "").trim() || "en";
+    if (!text) {
+      return res.status(400).json({ message: "missing text" });
+    }
+
+    const url = "https://translate.googleapis.com/translate_a/single";
+    const response = await axios.get(url, {
+      params: {
+        client: "gtx",
+        dt: "t",
+        sl: "auto",
+        tl: target,
+        q: text,
+      },
+      timeout: 10000,
+    });
+
+    console.log('response =>> ', response);
+    
+
+    const data = response.data;
+    const translated = Array.isArray(data?.[0])
+      ? data[0]
+          .filter((seg: any) => Array.isArray(seg) && typeof seg[0] === "string")
+          .map((seg: any) => seg[0])
+          .join("")
+      : "";
+
+    if (!translated) {
+      return res.status(502).json({ message: "unexpected translate response" });
+    }
+    console.log('translated =>> ',translated);
+    
+    return res.json({ text: translated, target });
+  } catch (err: any) {
+    const status = err?.response?.status ?? 500;
+    return res.status(status).json({ message: "translate error", error: String(err) });
+  }
+});
+
 // SPA fallback for frontend routing (only for GET requests and non-API paths)
 app.get("*", (req, res, next) => {
   if (req.method !== "GET") return next();
-  if (req.path.startsWith("/sse") || req.path.startsWith("/chat") || req.path.startsWith("/api")) {
+  if (
+    req.path.startsWith("/sse") ||
+    req.path.startsWith("/chat") ||
+    req.path.startsWith("/api") ||
+    req.path.startsWith("/translate")
+  ) {
     return next();
   }
   const indexHtml = path.join(publicDir, "index.html");
@@ -155,7 +206,7 @@ app.get("*", (req, res, next) => {
 });
 
 const port = Number(process.env.PORT) || 3000;
-app.listen(port, '0.0.0.0', () => {
+app.listen(port, "0.0.0.0", () => {
   log(`SSE listening on http://localhost:${port}`);
   const networks = os.networkInterfaces();
   const ipv4List = Object.values(networks).flatMap((ifaces) =>
@@ -169,7 +220,7 @@ app.listen(port, '0.0.0.0', () => {
     }
   }
   if (process.platform === "win32") {
-    exec(`start "" "http://localhost:${port}"`);
+    // exec(`start "" "http://localhost:${port}"`);
   }
 });
 
