@@ -147,6 +147,7 @@ app.post("/chat", async (req: Request, res: Response) => {
 app.get("/translate", async (req: Request, res: Response) => {
   try {
     const text = String(req.query.text ?? "").trim();
+    const origin = String(req.query.origin ?? "").trim() || "auto";
     const target = String(req.query.target ?? "").trim() || "en";
     if (!text) {
       return res.status(400).json({ message: "missing text" });
@@ -157,16 +158,12 @@ app.get("/translate", async (req: Request, res: Response) => {
       params: {
         client: "gtx",
         dt: "t",
-        sl: "auto",
+        sl: origin,
         tl: target,
         q: text,
       },
       timeout: 10000,
     });
-
-    console.log('response =>> ', response);
-    
-
     const data = response.data;
     const translated = Array.isArray(data?.[0])
       ? data[0]
